@@ -1,0 +1,131 @@
+// Browser-local navigation preferences. Never serialize these into a theme scheme.
+export const WORKSHOP_ENTRIES_KEY='orange.theme-lab.entries.v1';
+export const DEFAULT_WORKSHOP_ENTRIES=Object.freeze({wand:true,extensions:true,floating:true});
+export const WORKSHOP_ICON_URL=new URL('./materials/shared/workshop-butterfly.svg',import.meta.url).href;
+export const WORKSHOP_STOP_ICON_URL=new URL('./materials/shared/workshop-butterfly-outline.svg',import.meta.url).href;
+const labels={wand:'魔棒',extensions:'扩展',floating:'悬浮入口'};
+const targets={wand:'#extensionsMenu',extensions:'#extensions_settings'};
+
+export function createWorkshopEntries({document,launcher,onOpen=()=>{},onStopApplied=()=>{},onMessage=()=>{},storage,key=WORKSHOP_ENTRIES_KEY}={}){
+ if(!document||!launcher)throw new TypeError('Workshop entries require document and launcher');
+ let preferences={...DEFAULT_WORKSHOP_ENTRIES},editing=false,applied=false,destroyed=false;
+ const entries=new Map(),settings=new Set();
+ const report=message=>onMessage(message);
+ try{
+  if(storage===undefined)storage=document.defaultView?.localStorage||globalThis.localStorage;
+  if(!storage)throw new Error('浏览器存储不可用');
+  const raw=storage.getItem(key);
+  if(raw!=null){
+   const value=JSON.parse(raw);
+   if(!value||Object.keys(labels).some(name=>typeof value[name]!=='boolean')||!Object.keys(labels).some(name=>value[name]))throw new Error('入口设置无效');
+   preferences=Object.fromEntries(Object.keys(labels).map(name=>[name,value[name]]));
+  }
+ }catch(error){report('入口设置未能读取，已使用默认入口：'+error.message);}
+ const make=(tag,text)=>{const node=document.createElement(tag);if(text)node.textContent=text;return node;};
+ const actionRow=(name,text,action,{iconUrl=WORKSHOP_ICON_URL}={})=>{
+  // Match native Tavern/Lantai rows, rather than nesting a large menu_button.
+  const node=make('div');node.setAttribute('role','button');node.tabIndex=0;
+  node.className=name==='wand'?'list-group-item flex-container flexGap5':'inline-drawer-header standoutHeader flex-container flexGap5';
+  Object.assign(node.style,{flex:'0 0 auto',minWidth:'0',cursor:'pointer',justifyContent:'flex-start'});
+  const icon=make('img');icon.setAttribute('aria-hidden','true');
+  icon.src=iconUrl;icon.alt='';icon.draggable=false;
+  Object.assign(icon.style,{width:'1.25em',height:'1.25em',flex:'0 0 1.25em',objectFit:'contain',alignSelf:'center',pointerEvents:'none'});
+  const label=make('span',text);if(name==='extensions')label.style.fontWeight='bold';node.append(icon,label);
+  node.addEventListener('click',action);
+  node.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();if(!event.repeat)node.click();}});
+  return {node,label};
+ };
+ function ensureEntries(){
+  for(const [name,selector] of Object.entries(targets)){
+   const target=document.querySelector(selector),old=entries.get(name);
+   if(old?.root.parentNode===target&&target?.isConnected)continue;
+   old?.root.remove();entries.delete(name);
+   if(!target)continue;
+   const root=make('div');root.dataset.workshopEntry=name;
+   root.className='extension_container';
+   const {node:open,label:openLabel}=actionRow(name,'主题工坊',()=>onOpen());
+   const {node:stop}=actionRow(name,'停用美化',()=>onStopApplied(),{iconUrl:WORKSHOP_STOP_ICON_URL});
+   open.dataset.workshopAction='open';stop.dataset.workshopAction='stop';
+   root.append(open,stop);target.append(root);entries.set(name,{root,open,openLabel,stop});
+  }
+ }
+ function available(name){
+  if(name==='floating')return !!launcher.isConnected;
+  const entry=entries.get(name);
+  return !!entry?.root.isConnected&&(name!=='wand'||!!document.querySelector('#extensionsMenuButton')?.isConnected);
+ }
+ function updateSettings(){
+  for(const root of settings){
+   for(const input of root.querySelectorAll('[data-workshop-entry-choice]')){
+    const name=input.dataset.workshopEntryChoice;
+    input.checked=preferences[name];
+    const hint=root.querySelector(`[data-workshop-entry-hint="${name}"]`);
+    hint.textContent=name!=='floating'&&!available(name)?'（等待酒馆入口载入）':'';
+   }
+  }
+ }
+ function sync(){
+  if(destroyed)return;
+  ensureEntries();
+  for(const [name,{root,open,openLabel,stop}] of entries){
+   // Explicit inline display is understood by SillyTavern's native wand item counter.
+   const display=preferences[name]?'':'none';
+   if(root.style.display!==display)root.style.display=display;
+   const text=editing||applied?'继续编辑主题工坊':'主题工坊';
+   if(openLabel.textContent!==text)openLabel.textContent=text;
+   open.setAttribute('aria-label',editing||applied?'继续编辑主题工坊':'打开主题工坊');
+   if(stop.hidden!==!applied)stop.hidden=!applied;
+   if(stop.style.display!==(applied?'':'none'))stop.style.display=applied?'':'none';
+  }
+  const hide=editing||!preferences.floating;
+  if(launcher.classList.contains('hidden')!==hide)launcher.classList.toggle('hidden',hide);
+  updateSettings();
+ }
+ function setPreference(name,enabled){
+  if(destroyed||!Object.hasOwn(labels,name))return false;
+  sync();
+  const next={...preferences,[name]:!!enabled};
+  if(!Object.keys(labels).some(entry=>next[entry]&&available(entry))){
+   report('请至少保留一个已可用的工坊入口；可先启用魔棒或扩展，等待入口载入后再关闭悬浮入口。');updateSettings();return false;
+  }
+  try{
+   if(!storage)throw new Error('浏览器存储不可用');
+   storage.setItem(key,JSON.stringify(next));
+  }catch(error){report('入口设置未保存，已保留原设置：'+error.message);updateSettings();return false;}
+  preferences=next;sync();return true;
+ }
+ function renderSettings(){
+  const root=make('section');root.dataset.workshopEntrySettings='';
+  root.append(make('h4','工坊入口'),make('p','仅保存在当前浏览器，不随方案保存或导出。至少保留一个可用入口。'));
+  for(const [name,title] of Object.entries(labels)){
+   const label=make('label');label.className='checkbox_label';
+   const input=make('input');input.type='checkbox';input.dataset.workshopEntryChoice=name;input.setAttribute('aria-label',title+'入口');
+   input.addEventListener('change',()=>setPreference(name,input.checked));
+   const hint=make('small');hint.dataset.workshopEntryHint=name;
+   label.append(input,make('span',title),hint);root.append(label);
+  }
+  settings.add(root);updateSettings();return root;
+ }
+ sync();
+ // Native wand HTML is loaded asynchronously; also restore our entries after host rerenders.
+ const Observer=document.defaultView?.MutationObserver;
+ const entryTargets=Object.values(targets).concat('#extensionsMenuButton').join(',');
+ const containsTarget=node=>node.nodeType===1&&(node.matches(entryTargets)||!!node.querySelector(entryTargets));
+ const observer=Observer?new Observer(records=>{
+  // Only native target replacement/arrival and removal of our mounted rows need
+  // reconciliation. Chat rendering and ordinary native children do not change entries.
+  const changed=records.some(record=>record.type==='childList'&&(
+   [...record.addedNodes,...record.removedNodes].some(containsTarget)||
+   [...record.removedNodes].some(node=>node.nodeType===1&&[...entries.values()].some(({root})=>node===root||node.contains(root)))
+  ));
+  if(changed)sync();
+ }):null;
+ observer?.observe(document.body,{childList:true,subtree:true});
+ return {
+  get preferences(){return {...preferences};},
+  renderSettings,setPreference,sync,
+  setEditing(value){editing=!!value;sync();},
+  setApplied(value){applied=!!value;sync();},
+  destroy(){destroyed=true;observer?.disconnect();for(const {root} of entries.values())root.remove();entries.clear();settings.clear();},
+ };
+}

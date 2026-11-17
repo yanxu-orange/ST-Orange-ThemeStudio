@@ -1,0 +1,51 @@
+import {validImage, newLayer} from './layers.mjs';
+import {ASSETS} from './catalog.mjs';
+
+export function defaultPhoto(overrides={}) {
+  return {enabled:false,size:88,widthUnit:'px',height:'auto',radius:16,ratio:'1',frameWidth:3,frameColor:'#fffdf4',shadow:true,x:0,y:0,rotation:0,image:'',asset:'',...overrides};
+}
+export function validatePhotos(raw) {
+  if(raw===undefined)return {ai:defaultPhoto(),user:defaultPhoto()};
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('头像设置格式无效');
+  const result={};
+  for(const scope of ['ai','user']) {
+    const p=raw[scope];if(!p||typeof p!=='object'||Array.isArray(p))throw Error('头像设置无效：'+scope);
+    const out=defaultPhoto();
+    if(Object.keys(p).some(key=>!Object.hasOwn(out,key)))throw Error('头像设置包含未知参数');
+    const unit=p.widthUnit??'px',height=p.height??'auto';
+    if(!['px','percent'].includes(unit))throw Error('头像宽度单位无效');
+    if(height!=='auto'&&(!Number.isFinite(height)||height<1||height>600))throw Error('头像高度超出范围');
+    out.widthUnit=unit;out.height=height;
+    for(const [key,min,max] of [['size',unit==='percent'?1:40,unit==='percent'?100:600],['radius',0,150],['frameWidth',0,15],['x',-80,80],['y',-80,80],['rotation',-20,20]]) {
+      if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw Error('头像参数超出范围：'+key);out[key]=p[key];
+    }
+    for(const key of ['frameColor']) {if(typeof p[key]!=='string'||!/^#[a-f0-9]{6}$/i.test(p[key]))throw Error('头像颜色无效');out[key]=p[key];}
+    for(const key of ['enabled','shadow']) {if(typeof p[key]!=='boolean')throw Error('头像开关无效');out[key]=p[key];}
+    if(!['1','0.8','0.75','1.3333333333333333'].includes(p.ratio))throw Error('头像比例无效');out.ratio=p.ratio;
+    if(p.image&&!validImage(p.image))throw Error('头像图片格式无效');out.image=p.image||'';
+    if(p.asset&&!Object.hasOwn(ASSETS,p.asset))throw Error('头像素材无效');out.asset=p.asset||'';
+    result[scope]=out;
+  }
+  return result;
+}
+
+export function kittyLayers() {
+  const asset=(id,scope,options)=>newLayer('asset',{name:ASSETS[id].name,asset:id,scope,opacity:1,...options});
+  return [
+    asset('kitty-ai-window','ai',{width:31,widthUnit:'percent',heightPercent:88,anchor:'header',vertical:'bottom',x:0,y:22,z:0}),
+    asset('kitty-user-window','user',{width:34,widthUnit:'percent',heightPercent:92,anchor:'header',vertical:'bottom',x:0,y:15,z:0}),
+    asset('kitty-ai-cat','ai',{anchor:'avatar',side:'right',width:58,widthUnit:'percent',x:-14,y:-16,offsetUnit:'percent',z:4}),
+    newLayer('tape',{name:'AI 照片顶部纸胶带',scope:'ai',anchor:'avatar',side:'left',width:22,widthUnit:'percent',x:10,y:-6,offsetUnit:'percent',rotation:11,opacity:.55,z:3}),
+    newLayer('tape',{name:'用户照片顶部纸胶带',scope:'user',anchor:'avatar',side:'left',width:22,widthUnit:'percent',x:10,y:-6,offsetUnit:'percent',rotation:11,opacity:.55,z:3}),
+    asset('kitty-ai-paper','ai',{anchor:'avatar',width:8,widthUnit:'percent',side:'right',x:-13,y:0,vertical:'bottom',z:0,opacity:.7}),
+    asset('kitty-user-tape','user',{anchor:'avatar',side:'right',width:13,widthUnit:'percent',x:-20,y:12,offsetUnit:'percent',z:3,opacity:.85}),
+    asset('kitty-user-sprig','user',{anchor:'avatar',side:'right',width:33,widthUnit:'percent',x:-32,y:0,vertical:'bottom',offsetUnit:'percent',z:3}),
+    asset('kitty-user-cream','user',{anchor:'avatar',side:'right',width:10,widthUnit:'percent',x:-50,y:-3,vertical:'bottom',offsetUnit:'percent',z:1,opacity:.5}),
+  ];
+}
+
+
+export function photoDimensions(photo,innerWidth){
+ const width=photo.widthUnit==='percent'?innerWidth*photo.size/100:photo.size;
+ return {width,height:photo.height===undefined||photo.height==='auto'?width/Number(photo.ratio):photo.height};
+}

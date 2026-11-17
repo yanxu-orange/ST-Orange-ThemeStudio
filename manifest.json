@@ -1,0 +1,11 @@
+{
+  "display_name": "橙子的主题工坊",
+  "loading_order": 200,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "author": "yanxuorange",
+  "version": "0.25.0",
+  "minimum_client_version": "1.18.0",
+  "auto_update": false
+}
