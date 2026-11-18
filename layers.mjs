@@ -1,7 +1,8 @@
+import {validateImageSizing} from './image-sizing.mjs';
 import {uniqueId} from './unique-id.mjs';
 export const LAYER_LIMIT = 20;
 import {ASSETS} from './catalog.mjs';
-import {SHAPE_DEFAULTS,SHAPE_NAMES,validateShapeSettings} from './shape-assets.mjs';
+import {SHAPE_DEFAULTS,SHAPE_NAMES,isLineShape,lineHeightFactor,validateShapeSettings} from './shape-assets.mjs';
 import {validImage} from './image-sources.mjs';
 export {validImage} from './image-sources.mjs';
 export const KINDS = ['flower', 'star', 'tape', 'leaf', 'custom', 'asset', 'shape'];
@@ -10,7 +11,7 @@ export const clone = value => structuredClone(value);
 export function newLayer(kind = 'flower', overrides = {}) {
   return { id: uniqueId(), name: kind==='shape'?(SHAPE_NAMES[overrides.shape||SHAPE_DEFAULTS.shape]||'形状'):({flower:'花朵',star:'星星',tape:'纸胶带',leaf:'叶枝',custom:'我的图片',asset:'内置素材'})[kind], kind,
     image:'', width:90, x:8, y:8, opacity:.8, rotation:0, z:2, visible:true,
-    anchor:'header', side:'right', scope:'both', asset:'', widthUnit:'px', offsetUnit:'px', vertical:'top', heightPercent:0, ...(kind==='shape'?{...SHAPE_DEFAULTS,opacity:1}:{}), ...overrides };
+    anchor:'header', side:'right', scope:'both', asset:'', widthUnit:'px', offsetUnit:'px', vertical:'top', heightPercent:0, ...(kind==='shape'?{...SHAPE_DEFAULTS,...(isLineShape(overrides.shape)?{width:200,height:2*lineHeightFactor(overrides.shape),cornerRadius:0}:{}),opacity:1}:{}), ...overrides };
 }
 
 export function migrateLayers(raw) {
@@ -30,7 +31,7 @@ export function validateLayers(raw) {
     if (typeof layer.id !== 'string' || !/^[\w-]{1,80}$/.test(layer.id) || ids.has(layer.id)) throw Error('装饰标识无效或重复');
     ids.add(layer.id);
     const out = newLayer(layer.kind, {id:layer.id});
-    if(Object.keys(layer).some(key=>!Object.hasOwn(out,key)))throw Error('装饰包含未知参数');
+    if(Object.keys(layer).some(key=>!Object.hasOwn(out,key)&&key!=='imageSizing'))throw Error('装饰包含未知参数');
     if (typeof layer.name !== 'string' || layer.name.length > 80) throw Error('装饰名称过长');
     out.name = layer.name;
     for (const [key, min, max] of [['width',1,500],['x',-300,600],['y',-300,600],['opacity',0,1],['rotation',-180,180],['z',0,20]]) {
@@ -53,6 +54,7 @@ export function validateLayers(raw) {
     if(layer.kind==='asset'&&!out.asset)throw Error('未指定内置素材');
     if (layer.image && !validImage(layer.image)) throw Error('装饰图片格式不支持');
     out.image = layer.image || '';
+    if(layer.imageSizing!==undefined){if(layer.kind==='shape')throw Error('形状不能包含图片尺寸');out.imageSizing=validateImageSizing(layer.imageSizing);}
     if(layer.kind==='shape'){
       if(out.image||out.asset||out.heightPercent!==0)throw Error('形状不能包含图片或图片区域高度');
       Object.assign(out,validateShapeSettings(layer));
@@ -68,3 +70,4 @@ export function cropRect(width, height, ratio, zoom = 1, panX = 50, panY = 50) {
   const h = w / ratio;
   return {x:(width-w)*panX/100, y:(height-h)*panY/100, width:w, height:h};
 }
+

@@ -1,6 +1,13 @@
+import {imageSizeStyle} from './image-sizing.mjs';
 /** Recolorable vector layers. All SVG content is generated from validated values. */
-export const SHAPES = Object.freeze(['rectangle','star','heart']);
-export const SHAPE_NAMES = Object.freeze({rectangle:'矩形',star:'星形',heart:'爱心'});
+export const SHAPES = Object.freeze(['rectangle','star','heart','line','dashed','dotted','wave']);
+export const SHAPE_NAMES = Object.freeze({rectangle:'矩形',star:'星形',heart:'爱心',line:'实线',dashed:'虚线',dotted:'点线',wave:'波浪线'});
+export const isLineShape = shape => ['line','dashed','dotted','wave'].includes(shape);
+export const lineHeightFactor = shape => shape === 'wave' ? 6 : 1;
+// Keep saved height as the real artwork box; expose stroke thickness in the editor.
+export function lineThicknessTarget(layer) {
+  return {get height(){return layer.height / lineHeightFactor(layer.shape);},set height(value){layer.height=value*lineHeightFactor(layer.shape);}};
+}
 export const SHAPE_DEFAULTS = Object.freeze({
   shape:'rectangle',height:90,heightUnit:'px',cornerRadius:12,
   fillMode:'solid',color:'#e5b3b1',color2:'#e9ca81',gradientAngle:90,
@@ -21,10 +28,10 @@ export function validateShapeSettings(layer){
 
 /** Same dimension declarations in all preview and live artwork destinations. */
 export function layerSizeStyle(layer){
-  return {
+  return imageSizeStyle(layer)||{
     width:layer.width+(layer.widthUnit==='percent'?'%':'px'),
     height:layer.kind==='shape'?layer.height+(layer.heightUnit==='percent'?'%':'px'):layer.heightPercent?layer.heightPercent+'%':'auto',
-    objectFit:layer.kind==='shape'?'fill':'contain',
+    objectFit:layer.kind==='shape'?'fill':'contain',aspectRatio:'auto',objectPosition:layer.side+' '+layer.vertical,
   };
 }
 
@@ -47,8 +54,31 @@ export function shapeSvg(layer){
     defs=`<defs><linearGradient id="fill" gradientUnits="userSpaceOnUse" x1="${vector.x1}" y1="${vector.y1}" x2="${vector.x2}" y2="${vector.y2}"><stop offset="0" stop-color="${shape.color}"/><stop offset="1" stop-color="${shape.color2}"/></linearGradient></defs>`;
     fill='url(#fill)';
   }
+  // Relative widths are resolved by the browser, not by treating the percentage
+  // number as pixels. A user-space pattern repeats at a fixed wavelength.
+  if(shape.shape==='wave' && layer.widthUnit==='percent' && shape.heightUnit==='px'){
+    const stroke=height/6, halfWave=Math.max(stroke*6,1), y=height/2, amplitude=height/2-stroke/2;
+    const d=`M0 ${y} C${halfWave/3} ${y-amplitude} ${halfWave*2/3} ${y-amplitude} ${halfWave} ${y} C${halfWave*4/3} ${y+amplitude} ${halfWave*5/3} ${y+amplitude} ${halfWave*2} ${y}`;
+    const pattern=`<pattern id="wave-pattern" patternUnits="userSpaceOnUse" width="${halfWave*2}" height="${height}"><path d="${d}" fill="none" stroke="white" stroke-width="${stroke}"/></pattern><mask id="wave-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="${height}"><rect width="100%" height="${height}" fill="url(#wave-pattern)"/></mask>`;
+    const paint=shape.fillMode==='gradient'
+      ? `<foreignObject width="100%" height="${height}" mask="url(#wave-mask)"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;background:linear-gradient(${shape.gradientAngle}deg,${shape.color},${shape.color2})"></div></foreignObject>`
+      : `<rect width="100%" height="${height}" fill="${fill}" mask="url(#wave-mask)"/>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${height}"><defs>${pattern}</defs>${paint}</svg>`;
+  }
   let path;
-  if(shape.shape==='rectangle'){
+  if(isLineShape(shape.shape)){
+    const stroke=height/lineHeightFactor(shape.shape), y=height/2;
+    const strokeSizing=shape.heightUnit==='px'?' vector-effect="non-scaling-stroke"':'';
+    if(shape.shape==='line')path=`<rect width="${width}" height="${height}" fill="${fill}"/>`;
+    else if(shape.shape==='dashed')path=`<path d="M0 ${y}H${width}" fill="none" stroke="${fill}" stroke-width="${stroke}"${strokeSizing} stroke-dasharray="${stroke*4} ${stroke*3}"/>`;
+    else if(shape.shape==='dotted')path=`<path d="M${Math.min(stroke/2,width/2)} ${y}H${Math.max(width/2,width-stroke/2)}" fill="none" stroke="${fill}" stroke-width="${stroke}"${strokeSizing} stroke-linecap="round" stroke-dasharray="0 ${stroke*3}"/>`;
+    else {
+      const halfWave=Math.max(stroke*6,1), amplitude=height/2-stroke/2;
+      let d=`M0 ${y}`, x=0, sign=-1;
+      while(x<width){const end=Math.min(width,x+halfWave), span=end-x;d+=` C${decimal(x+span/3)} ${decimal(y+sign*amplitude)} ${decimal(x+span*2/3)} ${decimal(y+sign*amplitude)} ${decimal(end)} ${y}`;x=end;sign*=-1;}
+      path=`<path d="${d}" fill="none" stroke="${fill}" stroke-width="${stroke}"${strokeSizing}/>`;
+    }
+  }else if(shape.shape==='rectangle'){
     const radius=Math.min(shape.cornerRadius,width/2,height/2);
     path=`<rect width="${width}" height="${height}" rx="${decimal(radius)}" fill="${fill}"/>`;
   }else{
