@@ -2,10 +2,10 @@ import {clone} from './layers.mjs';
 
 export const FILL_DEFAULT={enabled:false,x:50,y:50,gradient:false,color:'#ffffff',opacity:1,start:40};
 export function normalizeAvatarFill(raw){
-  if(!raw||typeof raw!=='object'||Array.isArray(raw)||![1,2,3,4,5,6,7,8,9,10].includes(raw.version))throw Error('方案版本不支持');
+  if(!raw||typeof raw!=='object'||Array.isArray(raw)||![1,2,3,4,5,6,7,8,9,10,11].includes(raw.version))throw Error('方案版本不支持');
   const out=clone(raw);
   if(raw.version<10&&Object.hasOwn(raw,'avatarFill'))throw Error('旧方案不能包含铺满头像设置');
-  if(raw.version===10&&(!raw.avatarFill||typeof raw.avatarFill!=='object'||Array.isArray(raw.avatarFill)||Object.keys(raw.avatarFill).length!==2||Object.keys(raw.avatarFill).some(k=>!['ai','user'].includes(k))))throw Error('铺满头像分组无效');
+  if(raw.version>=10&&(!raw.avatarFill||typeof raw.avatarFill!=='object'||Array.isArray(raw.avatarFill)||Object.keys(raw.avatarFill).length!==2||Object.keys(raw.avatarFill).some(k=>!['ai','user'].includes(k))))throw Error('铺满头像分组无效');
   out.avatarFill={};
   for(const scope of ['ai','user']){
     const v=raw.version<10?{...FILL_DEFAULT}:raw.avatarFill[scope];
@@ -14,7 +14,7 @@ export function normalizeAvatarFill(raw){
     for(const [k,min,max]of [['x',0,100],['y',0,100],['opacity',0,1],['start',0,100]]){if(!Number.isFinite(v[k])||v[k]<min||v[k]>max)throw Error('铺满头像参数无效');d[k]=v[k];}
     if(typeof v.color!=='string'||!/^#[a-f0-9]{6}$/i.test(v.color))throw Error('渐变颜色无效');d.color=v.color;out.avatarFill[scope]=d;
   }
-  out.version=10;return out;
+  out.version=raw.version>=11?11:10;return out;
 }
 export function fillSettings(c,user=false){return c.avatarFill?.[user?'user':'ai']||FILL_DEFAULT;}
 // The exact same crop and overlay declarations are used in preview and live.

@@ -1,3 +1,4 @@
+import {canvasEnabled,enableHeaderCanvas,designInnerWidth} from './header-canvas.mjs';
 import { clone } from './layers.mjs';
 import { sceneWidth } from './text-scene.mjs';
 import { photoDimensions } from './photos.mjs';
@@ -9,6 +10,8 @@ export function createAvatarEditor({
   getPhotoScope,
   apply,
   renderFields,
+  validate,
+  notify,
   setPhotoScope,
   getUi,
   propertyHeading,
@@ -109,7 +112,7 @@ export function createAvatarEditor({
       unitSelect.setAttribute('aria-label', '头像宽度单位');
       for (const [value, text] of [
         ['px', '像素'],
-        ['percent', '相对区域百分比'],
+        ...(canvasEnabled(getConfig())?[]:[['percent', '相对区域百分比']]),
       ]) {
         const option = make('option', '', text);
         option.value = value;
@@ -127,8 +130,8 @@ export function createAvatarEditor({
         remember();
         p.widthUnit = unitSelect.value;
         p.size = Math.min(
-          p.widthUnit === 'percent' ? 100 : 600,
-          Math.max(p.widthUnit === 'percent' ? 1 : 40, p.size),
+          p.widthUnit === 'percent' ? 100 : canvasEnabled(getConfig())?2000:600,
+          Math.max(p.widthUnit === 'percent' || canvasEnabled(getConfig()) ? 1 : 40, p.size),
         );
         syncPhoto();
         apply();
@@ -137,8 +140,8 @@ export function createAvatarEditor({
       editorControl(
         container,
         field('头像宽度', 'size', 'range', {
-          min: p.widthUnit === 'percent' ? 1 : 40,
-          max: p.widthUnit === 'percent' ? 100 : 600,
+          min: p.widthUnit === 'percent' || canvasEnabled(getConfig()) ? 1 : 40,
+          max: p.widthUnit === 'percent' ? 100 : canvasEnabled(getConfig())?2000:600,
           unit: p.widthUnit === 'percent' ? '%' : 'px',
         }),
         p,
@@ -172,7 +175,7 @@ export function createAvatarEditor({
         p.height =
           heightMode.value === 'auto'
             ? 'auto'
-            : Math.max(1, Math.min(600, photoDimensions(p, width).height));
+            : Math.max(1, Math.min(canvasEnabled(getConfig())?2000:600, photoDimensions(p, width).height));
         syncPhoto();
         apply();
         renderFields();
@@ -195,7 +198,7 @@ export function createAvatarEditor({
           container,
           field('头像固定高度', 'height', 'range', {
             min: 1,
-            max: 600,
+            max: canvasEnabled(getConfig())?2000:600,
             unit: 'px',
           }),
           p,
@@ -239,8 +242,8 @@ export function createAvatarEditor({
       );
       propertyHeading(container, '位置与旋转');
       for (const f of [
-        field('头像横向移动', 'x', 'range', { min: -80, max: 80, unit: 'px' }),
-        field('头像纵向移动', 'y', 'range', { min: -80, max: 80, unit: 'px' }),
+        field('头像横向移动', 'x', 'range', { min: canvasEnabled(getConfig())?-2000:-80, max: canvasEnabled(getConfig())?2000:80, unit: 'px' }),
+        field('头像纵向移动', 'y', 'range', { min: canvasEnabled(getConfig())?-2000:-80, max: canvasEnabled(getConfig())?2000:80, unit: 'px' }),
         field('头像旋转', 'rotation', 'range', {
           min: -20,
           max: 20,
@@ -260,6 +263,8 @@ export function createAvatarEditor({
 
   function renderHeaderHeightFields(container) {
     const c=getConfig(), separate=c.userHeaderHeight!=null;
+    if(!canvasEnabled(c)){const start=make('button','','启用等比制作画布');start.type='button';start.id='enable-header-canvas';start.addEventListener('click',()=>{let next;try{next=validate(enableHeaderCanvas(c));}catch(error){notify('未启用制作画布：'+error.message);return;}remember();Object.assign(c,next);apply();renderFields();});container.append(start);}else{propertyHeading(container,'制作画布');editorControl(container,field('制作宽度','width','range',{min:200,max:2000,unit:'px'}),c.headerCanvas);}
+
     const label=make('label','field','AI 与用户头像区高度'), select=make('select');
     select.setAttribute('aria-label','AI 与用户头像区高度');
     for(const [value,text]of [['unified','相同高度'],['separate','分开设置']]){const option=make('option','',text);option.value=value;select.append(option);}

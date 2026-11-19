@@ -1,3 +1,5 @@
+import {canvasEnabled,headerCanvasScale,projectHeaderConfig,designInnerWidth} from './header-canvas.mjs';
+import {requestExportName} from './export-name.mjs';
 import {createGlassEditor} from './glass-editor.mjs';
 import { avatarCombinationScheme } from './default-layout.mjs';
 import { activateEditedRegion } from './edit-activation.mjs';
@@ -441,6 +443,7 @@ await (async () => {
         value = resolveMetadata(config, user)[key];
       if (value) {
         metadataScope = user ? 'user' : 'ai';
+        const pixels=canvasEnabled(config)&&value.region==='header',canvasScale=pixels?headerCanvasScale(config,msg.clientWidth):1;
         const parent =
           value.region === 'body-top'
             ? msg.querySelector('.mes_text')
@@ -458,11 +461,11 @@ await (async () => {
         }
         return {
           item: value,
+          canvasScale,percentX:!pixels,minX:pixels?-4000:-100,maxX:pixels?4000:200,
           selected:
             ui.region === 'header' && ui.kind === 'text' && ui.object === key,
           parent,
           width,
-          maxX: 200,
           maxY: 1600,
         };
       }
@@ -476,11 +479,13 @@ await (async () => {
     const region = footerId ? 'footer' : 'header',
       object = footerId ? footerKey(footerId) : id ? captionKey(id) : key;
     const parent = node.closest(footerId ? '.otl-footer' : '.ch_name');
+    const pixels=canvasEnabled(config)&&!footerId;
     return {
       item,
       selected:
         ui.region === region && ui.kind === 'text' && ui.object === object,
-      maxX: footerId ? 100 : 200,
+      canvasScale:pixels?headerCanvasScale(config,node.closest('.mes').clientWidth):1,percentX:!pixels,minX:pixels?-4000:-100,
+      maxX: pixels?4000:footerId ? 100 : 200,
       maxY: footerId ? 400 : 1600,
       parent,
       width: footerId
@@ -491,6 +496,7 @@ await (async () => {
     };
   }
   function previewLayerTarget(node, item) {
+    if (canvasEnabled(config)&&['header','avatar'].includes(item.anchor)){const msg=node.closest('.mes'),scale=headerCanvasScale(config,msg.clientWidth),projected=projectHeaderConfig(config,msg.clientWidth);return {canvasScale:scale,maxSize:4000,onPreview:item.anchor==='header'?()=>updateHeaderArtworkClip(node,item,sceneWidth(msg,projected),Math.max(0,(msg.getAttribute('is_user')==='true'?projected.userHeaderHeight??projected.headerHeight:projected.headerHeight)-(projected.cardPadding??24)),projected.cardPadding??24):undefined};}
     if (item.anchor === 'header')
       return {
         onPreview: () =>
@@ -740,6 +746,7 @@ await (async () => {
       hidden: ui.libraryExpanded,
       preserveTopbar: collapsed,
     });
+    liveAdapter.syncIsland();
   }
 
   function beginUploadFeedback(source, target, files) {
@@ -872,6 +879,8 @@ await (async () => {
   const { renderPhotoFields, renderHeaderHeightFields } = createAvatarEditor({
     make,
     getConfig: () => config,
+    validate,
+    notify,
     remember,
     getPhotoScope: () => photoScope,
     apply,
@@ -1666,6 +1675,7 @@ await (async () => {
       renderFields,
     });
   const { renderChromeFields } = createChromeEditor({
+    resetIslandPosition: liveAdapter.resetIslandPosition,
     renderGlassFields,
     getConfig: () => config,
     getUi: () => ui,
@@ -2821,6 +2831,8 @@ await (async () => {
     const button = shadow.querySelector('#export');
     button.disabled = true;
     try {
+      const filename = await requestExportName({document, root: shadow, trigger: button});
+      if (filename === null) return;
       const exported = validate(await portableScheme(validate(config)));
       const blob = new Blob([JSON.stringify(exported, null, 2)], {
         type: 'application/json',
@@ -2828,12 +2840,20 @@ await (async () => {
       const url = URL.createObjectURL(blob);
       const a = make('a');
       a.href = url;
-      a.download = '橙子的主题实验方案.json';
+      a.download = filename;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       notify('已导出实验方案；它不是酒馆原生主题文件。');
     } catch (error) { notify('导出失败：' + error.message); }
-    finally { button.disabled = false; }
+    finally {
+      button.disabled = false;
+      const restoreFocus = () => {
+        button.focus?.();
+        if (shadow.activeElement !== button) shadow.querySelector('.desktop-scheme summary')?.focus?.();
+      };
+      if (document.defaultView?.requestAnimationFrame) document.defaultView.requestAnimationFrame(restoreFocus);
+      else restoreFocus();
+    }
   });
   shadow
     .querySelector('#import')
